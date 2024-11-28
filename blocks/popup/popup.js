@@ -18,7 +18,13 @@ export default class Popup extends ComponentBase {
 
   configPopupAttributes = ['data-type', 'data-size', 'data-offset', 'data-height'];
 
-  dependencies = ['icon'];
+  elements = {
+    /**
+     * Optional special property to set a reference to a popupTrigger element which controls this popup.
+     * This will automatically control the states of the popupTrigger based on popup interaction.
+     */
+    popupTrigger: null,
+  };
 
   get isActive() {
     return this.dataset.active !== 'true';
@@ -28,10 +34,7 @@ export default class Popup extends ComponentBase {
     return [
       ...super.extendConfig(),
       {
-        contentFromTargets: false,
-        targetsAsContainers: {
-          contentFromTargets: false,
-        },
+        addFragmentContentOnInit: false,
         showCloseBtn: true,
         selectors: {
           popupBase: '.popup__base',
@@ -40,6 +43,7 @@ export default class Popup extends ComponentBase {
           popupContent: '.popup__content',
           popupOverlay: '.popup__overlay',
           popupCloseBtn: '.popup__close-btn',
+          fragmentTarget: '.popup__container',
         },
         elements: {
           sourceUrlAnchor: 'a',
@@ -53,25 +57,18 @@ export default class Popup extends ComponentBase {
     ];
   }
 
-  setDefaults() {
-    super.setDefaults();
-    /**
-     * Optional special property to set a reference to a popupTrigger element which controls this popup.
-     * This will automatically control the states of the popupTrigger based on popup interaction.
-     */
-    this.popupTrigger = null;
-  }
-
   setBinds() {
+    super.setBinds();
     this.closeOnEsc = this.closeOnEsc.bind(this);
   }
 
-  onInit() {
+  init() {
     this.showPopup(false);
     this.createPopupHtml();
-    this.setUrlFromTarget();
     this.queryElements();
+    this.addListeners();
     focusTrap(this.elements.popupContainer, { dynamicContent: true });
+    this.activeOnConnect();
   }
 
   createPopupHtml() {
@@ -105,13 +102,8 @@ export default class Popup extends ComponentBase {
       </div>`;
   }
 
-  addContentFromTarget() {
-    const { target } = this.initOptions;
-
-    this.elements.popupContent.append(...target.childNodes);
-  }
-
   addListeners() {
+    super.addListeners();
     this.elements.popupCloseBtn.addEventListener('click', () => {
       this.dataset.active = false;
     });
@@ -120,23 +112,14 @@ export default class Popup extends ComponentBase {
     });
   }
 
-  connected() {
-    this.activeOnConnect();
-  }
-
   activeOnConnect() {
     if (this.isActive) return;
-    popupState.closeActivePopup();
-    popupState.activePopup = this;
 
-    blockBodyScroll(true);
-    this.showPopup(true);
-    this.toggleCloseOnEsc(true);
-    focusFirstElementInContainer(this.elements.popupContainer);
+    this.openPopup();
   }
 
   async addFragmentContent() {
-    this.elements.popupContent.innerHTML = await this.fragmentContent;
+    this.elements.popupContent.append(...this.fragmentContent);
   }
 
   setInnerBlocks() {
@@ -233,7 +216,6 @@ export default class Popup extends ComponentBase {
     blockBodyScroll(true);
     await this.addFragmentContent();
     this.setInnerBlocks();
-    await this.initChildComponents();
     this.showPopup(true);
     this.updatePopupTrigger(true);
     this.toggleCloseOnEsc(true);
@@ -256,7 +238,7 @@ export default class Popup extends ComponentBase {
   }
 
   updatePopupTrigger(isActive) {
-    if (this.popupTrigger) this.popupTrigger.dataset.active = isActive;
+    if (this.elements.popupTrigger) this.elements.popupTrigger.dataset.active = isActive;
   }
 
   showPopup(boolean) {

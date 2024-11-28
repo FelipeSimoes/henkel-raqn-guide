@@ -1,23 +1,8 @@
 import ComponentBase from '../../scripts/component-base.js';
 
 export default class Accordion extends ComponentBase {
-  dependencies = ['icon'];
-
-  extendNestedConfig() {
-    return [
-      ...super.extendNestedConfig(),
-      {
-        button: {
-          componentName: 'button',
-          loaderConfig: {
-            targetsSelectorsPrefix: ':scope > :is(:nth-child(even))',
-          },
-        },
-      },
-    ];
-  }
-
-  ready() {
+  init() {
+    super.init();
     this.setAttribute('role', 'navigation');
     let children = Array.from(this.children);
     children = children.map((child) => {

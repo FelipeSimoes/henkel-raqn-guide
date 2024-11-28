@@ -8,7 +8,7 @@ export default class Card extends ComponentBase {
   attributesValues = {
     all: {
       data: {
-        columns: '4',
+        columns: '3',
         ratio: 'auto',
         eager: '0',
       },
@@ -25,9 +25,9 @@ export default class Card extends ComponentBase {
     },
   };
 
-  ready() {
+  init() {
+    super.init();
     this.eager = parseInt(this.dataset.eager || 0, 10);
-    this.classList.add('inner');
     if (this.eager) {
       eagerImage(this, this.eager);
     }

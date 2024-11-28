@@ -4,35 +4,16 @@ import { eagerImage, getMeta, metaTags } from '../../scripts/libs.js';
 const metaHeader = getMeta(metaTags.header.metaName);
 
 export default class Header extends ComponentBase {
-  static loaderConfig = {
-    ...ComponentBase.loaderConfig,
-    loaderStopInit() {
-      return metaHeader === false;
-    },
-  };
-
   attributesValues = {
     all: {
-      class: {
-        color: 'primary',
-      },
+      class: ['color-primary'],
     },
   };
 
   fragmentPath = `${metaHeader}.plain.html`;
 
-  dependencies = ['navigation', 'image'];
-
-  extendConfig() {
-    return [
-      ...super.extendConfig(),
-      {
-        addToTargetMethod: 'append',
-      },
-    ];
-  }
-
-  connected() {
+  async init() {
+    super.init();
     eagerImage(this, 1);
   }
 }

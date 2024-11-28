@@ -1,5 +1,6 @@
-import { deepMerge, getBaseUrl, loadModule } from './libs.js';
+import { deepMerge, flat, getBaseUrl, loadModule } from './libs.js';
 import { publish } from './pubsub.js';
+import { generateVirtualDom } from './render/dom.js';
 
 window.raqnEditor = window.raqnEditor || {};
 let watcher = false;
@@ -17,12 +18,12 @@ export const MessagesEvents = {
 };
 
 export function refresh(id) {
-  Object.keys(window.raqnEditor).forEach((name) => {
-    const { webComponentName } = window.raqnInstances[name][0];
+  Object.keys(window.raqnEditor).forEach((webComponentName) => {
     const instancesOrdered = Array.from(document.querySelectorAll(webComponentName));
-    window.raqnEditor[name].instances = instancesOrdered.map((item) =>
+    window.raqnComponents[webComponentName].instances = instancesOrdered;
+    window.raqnEditor[webComponentName].instances = instancesOrdered.map((item) =>
       // eslint-disable-next-line no-use-before-define
-      getComponentValues(window.raqnEditor[name].dialog, item),
+      getComponentValues(window.raqnEditor[webComponentName].dialog, item),
     );
   });
   const bodyRect = window.document.body.getBoundingClientRect();
@@ -34,10 +35,9 @@ export function refresh(id) {
 }
 
 export function updateComponent(component) {
-  const { componentName, uuid } = component;
-  const instance = window.raqnInstances[componentName].find((element) => element.uuid === uuid);
+  const { webComponentName, uuid } = component;
+  const instance = window.raqnComponents[webComponentName].instances.find((element) => element.uuid === uuid);
   if (!instance) return;
-
   instance.attributesValues = deepMerge({}, instance.attributesValues, component.attributesValues);
   instance.runConfigsByViewport();
   refresh(uuid);
@@ -46,6 +46,7 @@ export function updateComponent(component) {
 export function getComponentValues(dialog, element) {
   const html = element.innerHTML;
   window.document.body.style.height = 'auto';
+
   const domRect = element.getBoundingClientRect();
   let { variables = {}, attributes = {} } = dialog;
   variables = Object.keys(variables).reduce((data, variable) => {
@@ -54,18 +55,31 @@ export function getComponentValues(dialog, element) {
     return data;
   }, {});
   attributes = Object.keys(attributes).reduce((data, attribute) => {
-    const value = element.getAttribute(attribute);
+    if (attribute === 'data') {
+      const flatData = flat(element.dataset);
+      Object.keys(flatData).forEach((key) => {
+        const value = flatData[key];
+        if (attributes[attribute] && attributes[attribute][key]) {
+          if (data[attribute]) {
+            const extend = { ...attributes[attribute][key], value };
+            data[attribute][key] = extend;
+          } else {
+            data[attribute] = { [key]: { ...attributes[attribute][key], value } };
+          }
+        }
+      });
+      return data;
+    }
 
+    const value = element.getAttribute(attribute);
     data[attribute] = { ...attributes[attribute], value };
     return data;
   }, {});
   const cleanData = Object.fromEntries(Object.entries(element));
-  delete cleanData.initOptions;
-  delete cleanData.childComponents;
-  delete cleanData.nestedComponents;
-  delete cleanData.nestedComponentsConfig;
-
-  return { ...cleanData, domRect, editor: { attributes }, html };
+  const { attributesValues, webComponentName, componentName, uuid } = cleanData;
+  const children = generateVirtualDom(element.children, false);
+  const editor = { ...dialog, attributes };
+  return { attributesValues, webComponentName, componentName, uuid, domRect, dialog, editor, html, children };
 }
 
 export default function initEditor(listeners = true) {
@@ -75,10 +89,13 @@ export default function initEditor(listeners = true) {
         new Promise((resolve) => {
           setTimeout(async () => {
             try {
-              const component = await loadModule(`/blocks/${componentName}/${componentName}.editor`, false);
+              const fn = window.raqnComponents[componentName];
+              const name = fn.name.toLowerCase();
+              const component = loadModule(`/blocks/${name}/${name}.editor`, { loadCSS: false });
               const mod = await component.js;
               if (mod && mod.default) {
                 const dialog = await mod.default();
+
                 const masterConfig = window.raqnComponentsMasterConfig;
                 const variations = masterConfig[componentName];
                 dialog.selection = variations;

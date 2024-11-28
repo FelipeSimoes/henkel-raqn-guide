@@ -22,9 +22,18 @@ export const globalConfig = {
   classes: {
     noScroll: 'no-scroll',
   },
+  previewHosts: {
+    localhost: 'localhost',
+    review: 'aem.page',
+  },
+  isPreview: undefined,
 };
 
 export const metaTags = {
+  basepath: {
+    metaName: 'basepath',
+    fallbackContent: window.location.origin,
+  },
   breadcrumbRoot: {
     metaName: 'breadcrumb-root',
     fallbackContent: '/',
@@ -44,13 +53,10 @@ export const metaTags = {
     fallbackContent: '/footer',
     // contentType: 'path without extension',
   },
-  structure: {
-    metaNamePrefix: 'structure',
-    // contentType: 'boolean string',
-  },
   template: {
     metaName: 'template',
-    // contentType: 'string template name',
+    fallbackContent: '/page-templates/',
+    // contentType: 'string template name and path defaults to fallbackContent - or the full path including template name',
   },
   lcp: {
     metaName: 'lcp',
@@ -63,16 +69,17 @@ export const metaTags = {
   },
   themeConfig: {
     metaNamePrefix: 'theme-config',
+    fallbackContent: '/configs/',
     // contentType: 'boolean string',
   },
   themeConfigColor: {
     metaName: 'theme-config-color',
-    fallbackContent: '/color',
+    fallbackContent: '/configs/color',
     // contentType: 'path without extension',
   },
   themeConfigFont: {
     metaName: 'theme-config-font',
-    fallbackContent: '/font',
+    fallbackContent: '/configs/font',
     // contentType: 'path without extension',
   },
   themeConfigFontFiles: {
@@ -82,12 +89,12 @@ export const metaTags = {
   },
   themeConfigLayout: {
     metaName: 'theme-config-layout',
-    fallbackContent: '/layout',
+    fallbackContent: '/configs/layout',
     // contentType: 'path without extension',
   },
-  themeConfigComponent: {
-    metaName: 'theme-config-component',
-    fallbackContent: '/components-config',
+  componentsConfig: {
+    metaName: 'components-config',
+    fallbackContent: '/configs/components-config',
     // contentType: 'path without extension',
   },
   theme: {
@@ -97,8 +104,26 @@ export const metaTags = {
   },
 };
 
+export const isPreview = () => {
+  if (typeof globalConfig.isPreview !== 'undefined') return globalConfig.isPreview;
+
+  const { hostname, searchParams } = new URL(window.location);
+  const isDisabled = searchParams.has('raqnPreviewOff');
+  if (isDisabled) {
+    globalConfig.isPreview = !isDisabled;
+    return globalConfig.isPreview;
+  }
+  const { previewHosts } = globalConfig;
+
+  globalConfig.isPreview = Object.values(previewHosts).some((host) => hostname.endsWith(host));
+  return globalConfig.isPreview;
+};
+
+export const isTemplatePage = (url) => (url || window.location.pathname).includes(metaTags.template.fallbackContent);
+
+export const capitalizeCase = (val) => val.replace(/^[a-z]/g, (k) => k.toUpperCase());
 export const camelCaseAttr = (val) => val.replace(/-([a-z])/g, (k) => k[1].toUpperCase());
-export const capitalizeCaseAttr = (val) => camelCaseAttr(val.replace(/^[a-z]/g, (k) => k.toUpperCase()));
+export const capitalizeCaseAttr = (val) => camelCaseAttr(capitalizeCase(val));
 
 export function getMediaQuery(breakpointMin, breakpointMax) {
   const min = `(min-width: ${breakpointMin}px)`;
@@ -115,6 +140,7 @@ export function getBreakPoints() {
     ordered: [],
     byName: {},
     active: null,
+    previousActive: null,
   };
 
   // return if already set
@@ -155,6 +181,7 @@ export function listenBreakpointChange(callback) {
         active = { ...breakpoint };
         if (breakpoints.active.name !== breakpoint.name) {
           breakpoints.active = { ...breakpoint };
+          breakpoints.previousActive = { ...e.previousRaqnBreakpoint };
         }
       }
 
@@ -319,33 +346,148 @@ export function deepMerge(origin, ...toMerge) {
   return deepMerge(origin, ...toMerge);
 }
 
-export function loadModule(urlWithoutExtension, loadCSS = true) {
-  try {
-    const js = import(`${urlWithoutExtension}.js`);
-    if (!loadCSS) return { js, css: Promise.resolve() };
-    const css = new Promise((resolve, reject) => {
+/**
+ * Helps handle the merging of non object prop values like string or arrays
+ * by providing a key path and a method which defines how to handle the merge.
+ *  @example
+ * keyPathMethods: {
+ *  '**.*': (a, b) => {}, // matches any key at any level. As an example by using a,b type checks can define general merging handling or all arrays properties.
+ *  '**.class': (a, b) => {} // matches class key at any level
+ *  '**.class|classes': (a, b) => {} // matches class or classes keys at any level
+ *  '**.all|xs.class': (a, b) => {} // matches all.class or xs.class key paths at any level of nesting
+ *  'all.class': (a, b) => {} // matches the exact key path nesting
+ *  'all.class': (a, b) => {} // matches the exact key path nesting
+ *  'all|xs.*.settings|config.*.class': (a, b) => { // matches class key at 5th level of nesting where '*' can be any
+ *                                      } // key and first level is all and 3rd level si settings
+ *  '*.*.*.class': (a, b) => {} // matches class key at 4th level of nesting where '*' can be any key
+ *  '*.*.*.class': (a, b) => {} // matches class key at 4th level of nesting where '*' can be any key
+ * }
+ */
+export function deepMergeByType(keyPathMethods, origin, ...toMerge) {
+  if (!toMerge.length) return origin;
+  const merge = toMerge.shift();
+  const keyPathMethodsCopy = keyPathMethods || {};
+  const pathsArrays =
+    keyPathMethodsCopy?.pathsArrays ||
+    Object.entries(keyPathMethodsCopy).flatMap(([key, method]) => {
+      if (key === 'currentPath') return [];
+      return [[key.split('.').map((k) => k.split('|')), method]];
+    });
+  const { currentPath = [] } = keyPathMethodsCopy;
+
+  if (isOnlyObject(origin) && isOnlyObject(merge)) {
+    Object.keys(merge).forEach((key) => {
+      const localPath = [...currentPath, key];
+
+      if (isOnlyObject(merge[key])) {
+        const noKeyInOrigin = !origin[key];
+        // overwrite origin non object values with objects
+        const overwriteOriginWithObject = !isOnlyObject(origin[key]) && isOnlyObject(merge[key]);
+        if (noKeyInOrigin || overwriteOriginWithObject) {
+          Object.assign(origin, { [key]: {} });
+        }
+        deepMergeByType({ pathsArrays, currentPath: localPath }, origin[key], merge[key]);
+      } else {
+        const extendByBath =
+          !!pathsArrays.length &&
+          pathsArrays.some(([keyPathPattern, method]) => {
+            const keyPathCheck = [...keyPathPattern];
+            const localPathCheck = [...localPath];
+
+            if (keyPathCheck.at(0).at(0) === '**') {
+              keyPathCheck.shift();
+              if (localPathCheck.length > keyPathCheck.length) {
+                localPathCheck.splice(0, localPathCheck.length - keyPathCheck.length);
+              }
+            }
+
+            if (localPathCheck.length !== keyPathCheck.length) return false;
+
+            const isPathMatch = localPathCheck.every((k, i) =>
+              keyPathCheck[i].some((check) => k === check || check === '*'),
+            );
+            if (!isPathMatch) return false;
+            Object.assign(origin, { [key]: method(origin[key], merge[key]) });
+            return true;
+          });
+
+        if (!extendByBath) {
+          Object.assign(origin, { [key]: merge[key] });
+        }
+      }
+    });
+  }
+
+  return deepMergeByType({ pathsArrays, currentPath }, origin, ...toMerge);
+}
+
+export function loadModule(urlWithoutExtension, { loadCSS = true, loadJS = true }) {
+  const modules = { js: null, css: null };
+  if (!urlWithoutExtension) return modules;
+
+  if (loadJS) {
+    modules.js = import(`${urlWithoutExtension}.js`).catch((error) => {
+      // eslint-disable-next-line no-console
+      console.log('Could not load module js', urlWithoutExtension, error);
+      return error;
+    });
+  }
+
+  if (loadCSS) {
+    modules.css = new Promise((resolve, reject) => {
       const cssHref = `${urlWithoutExtension}.css`;
-      if (!document.querySelector(`head > link[href="${cssHref}"]`)) {
+      const style = document.querySelector(`head > link[href="${cssHref}"]`);
+      if (!style) {
         const link = document.createElement('link');
-        link.rel = 'stylesheet';
         link.href = cssHref;
-        link.onload = resolve;
+        // make the css loading not be render blocking
+        link.rel = 'preload';
+        link.as = 'style';
+        link.onload = () => {
+          link.onload = null;
+          link.rel = 'stylesheet';
+          resolve(link);
+        };
         link.onerror = reject;
         document.head.append(link);
       } else {
-        resolve();
+        resolve(style);
       }
-    }).catch((error) =>
+    }).catch((error) => {
       // eslint-disable-next-line no-console
-      console.log('Could not load module style', urlWithoutExtension, error),
-    );
-
-    return { css, js };
-  } catch (error) {
-    // eslint-disable-next-line no-console
-    console.log('Could not load module', urlWithoutExtension, error);
+      console.log('Could not load module style', urlWithoutExtension, error);
+      return error;
+    });
   }
-  return { css: Promise.resolve(), js: Promise.resolve() };
+
+  return modules;
+}
+
+/**
+ * When creating elements that require properties to be set on them
+ * either await for this method when loading the component
+ * or use `await customElements.whenDefined('component-tag');`
+ * Otherwise properties set on the element before it was defined will be overwritten
+ * with the defaults from the class.
+ * This is not required for attributes.
+ */
+export async function loadAndDefine(componentConfig) {
+  const { tag, module: { path, loadJS, loadCSS } = {} } = componentConfig;
+  if (window.raqnComponents[tag]) {
+    return { tag, module: window.raqnComponents[tag] };
+  }
+
+  const { js } = loadModule(path, { loadJS, loadCSS });
+
+  const module = await js;
+
+  if (module?.default?.prototype instanceof HTMLElement) {
+    if (!window.customElements.get(tag)) {
+      window.customElements.define(tag, module.default);
+      window.raqnComponents[tag] = module.default;
+    }
+  }
+  return { tag, module };
 }
 
 export function mergeUniqueArrays(...arrays) {
@@ -354,7 +496,15 @@ export function mergeUniqueArrays(...arrays) {
 }
 
 export function getBaseUrl() {
-  return document.head.querySelector('base').href;
+  const basepath = getMeta(metaTags.basepath.metaName);
+  const base = document.head.querySelector('base');
+
+  if (!base) {
+    const element = document.createElement('base');
+    element.href = basepath;
+    document.head.append(element);
+  }
+  return basepath;
 }
 
 export function isHomePage(url) {
@@ -448,7 +598,7 @@ export const focusTrap = (elem, { dynamicContent } = { dynamicContent: false }) 
  * @param {String} alreadyFlat - prefix or recursive keys.
  * */
 
-export function flat(obj = {}, alreadyFlat = '', sep = '-', maxDepth = 10) {
+export function flat(obj = {}, alreadyFlat = '', sep = '.', maxDepth = 10) {
   const f = {};
   // check if its a object
   Object.keys(obj).forEach((k) => {
@@ -467,7 +617,7 @@ export function flat(obj = {}, alreadyFlat = '', sep = '-', maxDepth = 10) {
   return f;
 }
 
-export function flatAsValue(data, sep = '-') {
+export function flatAsValue(data, sep = '.') {
   return Object.entries(data)
     .reduce((acc, [key, value]) => {
       if (isObject(value)) {
@@ -478,7 +628,7 @@ export function flatAsValue(data, sep = '-') {
     .trim();
 }
 
-export function flatAsClasses(data, sep = '-') {
+export function flatAsClasses(data, sep = '.') {
   return Object.entries(data)
     .reduce((acc, [key, value]) => {
       const accm = acc ? `${acc} ` : '';
@@ -499,7 +649,7 @@ export function flatAsClasses(data, sep = '-') {
  * @param {Object} obj - Object to unflatten
  * */
 
-export function unFlat(f, sep = '-') {
+export function unFlat(f, sep = '.') {
   const un = {};
   // for each key create objects
   Object.keys(f).forEach((key) => {
@@ -533,44 +683,77 @@ export function blockBodyScroll(boolean) {
   document.body.classList.toggle(noScroll, boolean);
 }
 
-// Separate any other blocks from grids and grid-item because:
-// grids must be initialized only after all the other blocks are initialized
-// grid-item component are going to be generated and initialized by the grid component and should be excluded from blocks.
-export function getBlocksAndGrids(elements) {
-  const blocksAndGrids = elements.reduce(
-    (acc, block) => {
-      // exclude grid items
-      if (block.componentName === 'grid-item') return acc;
-      if (block.componentName === 'grid') {
-        // separate grids
-        acc.grids.push(block);
-      } else {
-        // separate the rest of blocks
-        acc.blocks.push(block);
-      }
-      return acc;
-    },
-    { grids: [], blocks: [] },
-  );
+/**
+ * Load a file used only for preview.
+ * Adds an easy way to load inside a file the preview version of the same file with a .preview.js suffix,
+ * using the `import.meta` as value for `path` param.
+ *
+ * @param {string|import.meta} path - The path including file name from where to load the preview file
+ *                   If the file is in the same path as the current one where this method is called
+ *                   then `import.meta` can be used as value
+ * @param {string} name - the name of an export from the module.
+ * @returns {module|*} - the module or a specific export from the module.
+ */
+export const previewModule = async (path, name) => {
+  if (!isPreview()) return null;
+  let newPath = path;
+  if (path.url) {
+    const localPath = path.url.split('.js');
+    localPath.splice(1, 1, '.preview.js');
+    newPath = localPath.join('');
+  }
+  const module = await import(newPath);
+  return name ? module[name] : module;
+};
 
-  // if a grid doesn't specify its level will default to level 1
-  const getGridLevel = (elem) => {
-    const levelClass = [...elem.classList].find((cls) => cls.startsWith('data-level-')) || 'data-level-1';
-    return Number(levelClass.slice('data-level-'.length));
-  };
-
-  // Based on how each gird is identifying it's own grid items, the grid initialization
-  // must be done starting from the deepest level grids.
-  // This is because each grid can contain other grids in their grid-items
-  // To achieve this infinite nesting each grid deeper than level 1 must specify their level of
-  // nesting with the data-level= option e.g data-level=2
-  blocksAndGrids.grids.sort(({ targets: [elemA] }, { targets: [elemB] }) => {
-    const levelA = getGridLevel(elemA);
-    const levelB = getGridLevel(elemB);
-    if (levelA <= levelB) return 1;
-    if (levelA > levelB) return -1;
-    return 0;
+export function yieldToMain() {
+  return new Promise((resolve) => {
+    setTimeout(resolve, 0);
   });
+}
 
-  return blocksAndGrids;
+/**
+ * Functions running complex computation have a potential to generate a task with high block time.
+ *
+ * To mitigate this issue the functionality should be splitted into multiple functions which
+ * should be called using the runTasks() method.
+ *
+ * Functions called with runTasks() can further more use same technique
+ * inside of them to break down the functionality into smaller tasks and call them using runTasks();
+ *
+ * Use call() or apply() methods to call the runTasks() method in order to set the thisArg for the tasks in the list.
+ *
+ * @param  {*} params - initial parameter accessible in all tasks calls under the `params` key.
+ * @param  {...any} taskList - and succession of function to be called as tasks. The tasks can be async.
+ * @returns {object} - contains all the results from all tasks calls where the key is the task function name including the initial params key.
+ */
+export async function runTasks(params, ...taskList) {
+  const prevResults = {};
+  let i = 0;
+  prevResults.params = params;
+
+  while (taskList.length > 0) {
+    i += 1;
+    const task = taskList.shift();
+
+    // Run the task:
+    let result = null;
+    // eslint-disable-next-line no-await-in-loop
+    result = await task.call(this, prevResults, i);
+
+    if (!task.name.length) {
+      // eslint-disable-next-line no-console
+      console.warn("The task doesn't have a name. Please use a named function to create the task.");
+    }
+    if (result?.stopTaskRun) {
+      result = result.value;
+      taskList.splice(0, taskList.length);
+    }
+    prevResults[task.name || i] = result;
+
+    // Yield to the main thread
+    // eslint-disable-next-line no-await-in-loop
+    await yieldToMain();
+  }
+  return prevResults;
 }

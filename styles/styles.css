@@ -69,6 +69,8 @@ body {
   padding: 0;
   margin: 0;
   width: 100%;
+
+  /* padding-top: var(--header-height, 110px); */
 }
 
 body.no-scroll {
@@ -81,9 +83,20 @@ body.no-scroll {
   bottom: 0;
 }
 
+/* avoid font most swaps  */
+body,
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--p-font-family, system-ui);
+}
+
 body > * {
   color: var(--text, #000);
-  font-family: var(--p-font-family, roboto);
+  font-family: var(--p-font-family, system-ui);
   font-size: var(--p-font-size, 1rem);
   font-weight: var(--p-font-weight, normal);
   font-style: var(--p-font-style, normal);
@@ -118,7 +131,7 @@ h4 {
 }
 
 h1 {
-  font-family: var(--h1-font-family, roboto);
+  font-family: var(--h1-font-family, system-ui);
   font-size: var(--h1-font-size, 1rem);
   font-weight: var(--h1-font-weight, normal);
   font-style: var(--h1-font-style, normal);
@@ -126,7 +139,7 @@ h1 {
 }
 
 h2 {
-  font-family: var(--h2-font-family, roboto);
+  font-family: var(--h2-font-family, system-ui);
   font-size: var(--h2-font-size, 1rem);
   font-weight: var(--h2-font-weight, normal);
   font-style: var(--h2-font-style, normal);
@@ -134,7 +147,7 @@ h2 {
 }
 
 h3 {
-  font-family: var(--h3-font-family, roboto);
+  font-family: var(--h3-font-family, system-ui);
   font-size: var(--h3-font-size, 1rem);
   font-weight: var(--h3-font-weight, normal);
   font-style: var(--h3-font-style, normal);
@@ -142,7 +155,7 @@ h3 {
 }
 
 h5 {
-  font-family: var(--h5-font-family, roboto);
+  font-family: var(--h5-font-family, system-ui);
   font-size: var(--h5-font-size, 1rem);
   font-weight: var(--h5-font-weight, normal);
   font-style: var(--h5-font-style, normal);
@@ -150,7 +163,7 @@ h5 {
 }
 
 h4 {
-  font-family: var(--h4-font-family, roboto);
+  font-family: var(--h4-font-family, system-ui);
   font-size: var(--h4-font-size, 1rem);
   font-weight: var(--h4-font-weight, normal);
   font-style: var(--h4-font-style, normal);
@@ -158,7 +171,7 @@ h4 {
 }
 
 h6 {
-  font-family: var(--h6-font-family, roboto);
+  font-family: var(--h6-font-family, system-ui);
   font-size: var(--h6-font-size, 1rem);
   font-weight: var(--h6-font-weight, normal);
   font-style: var(--h6-font-style, normal);
@@ -166,7 +179,7 @@ h6 {
 }
 
 label {
-  font-family: var(--label-font-family, roboto);
+  font-family: var(--label-font-family, system-ui);
   font-size: var(--label-font-size, 1rem);
   font-weight: var(--label-font-weight, normal);
   font-style: var(--label-font-style, normal);
@@ -186,10 +199,29 @@ img {
 }
 
 /* Set default block style to all raqn web components 
-   Use :where() to give lower specificity in order to not overwrite any display option set on the web component tag 
+   Use :where() to give lower specificity in order to not overwrite any styles set on the web component tag 
 */
-:where([raqnWebComponent]) {
+:where([raqnwebcomponent]) {
   display: block;
+
+  /* Add defaults to initial to prevent inheritance */
+  --margin-block-start: initial;
+  --margin-block-end: initial;
+  --margin-inline-start: initial;
+  --margin-inline-end: initial;
+  --padding-block-start: initial;
+  --padding-block-end: initial;
+  --padding-inline-start: initial;
+  --padding-inline-end: initial;
+
+  margin-block-start: var(--margin-block-start);
+  margin-block-end: var(--margin-block-end);
+  margin-inline-start: var(--margin-inline-start);
+  margin-inline-end: var(--margin-inline-end);
+  padding-block-start: var(--padding-block-start);
+  padding-block-end: var(--padding-block-end);
+  padding-inline-start: var(--padding-inline-start);
+  padding-inline-end: var(--padding-inline-end);
 }
 
 /* Container: make all content act as a container where background of the container is limited to the content area */
@@ -197,30 +229,22 @@ main > div > *:not(.full-width) {
   margin-inline: var(--container-width);
 }
 
+:where(main, raqn-header, raqn-footer) > raqn-section > *:not(.full-width) {
+  margin-inline: var(--container-width);
+  width: initial;
+}
+
 /* Change the above behavior by setting the full-with class on the block. This will make the background take the full width of the page */
 .full-width {
-  padding-inline: var(--container-width);
-}
-
-/* TODO Check if this is still needed */
-main > div > div {
-  background: var(--background, #fff);
-  color: var(--text, #000);
-  padding: var(--padding, 0);
-}
-
-/* TODO Check if this is still needed */
-main > div > div > div {
-  max-width: var(--max-width, 100%);
-  margin: var(--margin, 0 auto);
-  width: 100%;
+  max-width: var(--max-width);
+  margin-inline: auto;
 }
 
 a {
   align-items: center;
   color: var(--highlight, inherit);
   text-decoration: none;
-  font-family: var(--a-font-family, roboto);
+  font-family: var(--a-font-family, system-ui);
   font-size: var(--a-font-size, 1rem);
   font-weight: var(--a-font-weight, normal);
   font-style: var(--a-font-style, normal);
@@ -238,7 +262,7 @@ button {
   display: inline-flex;
   align-items: center;
   text-decoration: none;
-  font-family: var(--button-font-family, roboto);
+  font-family: var(--button-font-family, system-ui);
   font-size: var(--button-font-size, 1rem);
   font-weight: var(--button-font-weight, normal);
   font-style: var(--button-font-style, normal);
@@ -246,7 +270,7 @@ button {
 }
 
 /* Hide raqn web components based on different states */
-[isloading],
+[isloading]:not(.show-loader),
 .hide-with-error,
 .hide {
   display: none;
@@ -255,4 +279,44 @@ button {
 
 #franklin-svg-sprite {
   display: none;
+}
+
+.show-loader {
+  position: relative;
+  min-height: 100px;
+
+  &::before {
+    content: '';
+    position: absolute;
+    z-index: 1;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+    background: white;
+  }
+
+  &::after {
+    content: '';
+    position: absolute;
+    left: 50%;
+    transform-origin: center;
+    z-index: 2;
+    border: 5px solid #f3f3f3; /* Light grey */
+    border-top: 5px solid #555; /* Blue */
+    border-radius: 50%;
+    width: 25px;
+    height: 25px;
+    animation: spin 0.75s linear infinite;
+  }
+}
+
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+
+  100% {
+    transform: rotate(360deg);
+  }
 }

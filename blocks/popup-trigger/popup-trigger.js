@@ -1,19 +1,19 @@
 import ComponentBase from '../../scripts/component-base.js';
-import component from '../../scripts/init.js';
-import { popupState } from '../../scripts/libs.js';
+import { componentList } from '../../scripts/component-list/component-list.js';
+import { popupState, loadAndDefine } from '../../scripts/libs.js';
 
 export default class PopupTrigger extends ComponentBase {
-  static observedAttributes = ['data-active', 'data-url'];
+  static observedAttributes = ['data-active', 'data-action'];
 
-  static loaderConfig = {
-    ...ComponentBase.loaderConfig,
-    targetsSelectors: 'a:is([href*="#popup-trigger"],[href*="#popup-close"])',
-    targetsAsContainers: true,
+  isClosePopupTrigger = false;
+
+  popupSourceUrl = null;
+
+  popupConfigId = null;
+
+  elements = {
+    popup: null,
   };
-
-  dependencies = ['popup'];
-
-  nestedComponentsConfig = {};
 
   get isActive() {
     return this.dataset.active === 'true';
@@ -23,78 +23,57 @@ export default class PopupTrigger extends ComponentBase {
     return [
       ...super.extendConfig(),
       {
-        elements: {
+        selectors: {
           popupBtn: 'button',
+          triggerIcon: 'raqn-icon',
         },
         closePopupIdentifier: '#popup-close',
+        triggerPopupIdentifier: '#popup-trigger',
       },
     ];
   }
 
-  setDefaults() {
-    super.setDefaults();
-    this.isClosePopupTrigger = false;
-    this.ariaLabel = null;
-    this.popupSourceUrl = null;
+  init() {
+    this.setAction(this.dataset.action);
+    super.init();
   }
 
-  onInit() {
-    this.createButton();
-    this.popupBtn.append(...this.childNodes);
-    this.append(this.popupBtn);
-    this.processTargetAnchor();
-  }
+  setAction(action) {
+    const sourceUrl = URL.parse(action, window.location.origin);
+    if (!sourceUrl) {
+      // eslint-disable-next-line no-console
+      console.warn(`The value provided is not a valid path: ${action}`);
+      return;
+    }
 
-  processTargetAnchor() {
-    const { target: anchor } = this.initOptions;
-    const { closePopupIdentifier } = this.config;
-    const anchorUrl = new URL(anchor.href);
+    const { closePopupIdentifier, triggerPopupIdentifier } = this.config;
 
-    if (anchorUrl.hash === closePopupIdentifier) {
+    if (sourceUrl.hash === closePopupIdentifier) {
       this.isClosePopupTrigger = true;
-    } else {
-      this.dataset.url = anchorUrl.pathname;
+      return;
     }
 
-    if (anchor.hasAttribute('aria-label')) {
-      this.ariaLabel = anchor.getAttribute('aria-label');
-      this.popupBtn.setAttribute('aria-label', this.ariaLabel);
-    }
-  }
+    this.popupSourceUrl = sourceUrl.pathname;
 
-  addContentFromTarget() {
-    const { target } = this.initOptions;
-    this.popupBtn.append(...target.childNodes);
-  }
+    const [, configId] = sourceUrl.hash.split(`${triggerPopupIdentifier}-`);
 
-  createButton() {
-    this.popupBtn = document.createElement('button');
-    this.popupBtn.setAttribute('aria-expanded', 'false');
-    this.popupBtn.setAttribute('aria-haspopup', 'true');
-    this.popupBtn.setAttribute('type', 'button');
+    if (configId) this.popupConfigId = configId;
   }
 
   addListeners() {
-    this.popupBtn.addEventListener('click', (e) => {
+    super.addListeners();
+    this.elements.popupBtn.addEventListener('click', (e) => {
       e.preventDefault();
       this.dataset.active = !this.isActive;
     });
   }
 
-  onAttributeUrlChanged({ oldValue, newValue }) {
+  onAttributeActionChanged({ oldValue, newValue }) {
+    if (!this.initialized) return;
     if (this.isClosePopupTrigger) return;
     if (oldValue === newValue) return;
-    let sourceUrl;
 
-    try {
-      sourceUrl = new URL(newValue, window.location.origin);
-    } catch (error) {
-      // eslint-disable-next-line no-console
-      console.warn('The value provided is not a valid path', error);
-      return;
-    }
-
-    this.popupSourceUrl = sourceUrl.pathname;
+    this.setAction(newValue);
 
     if (this.popup) {
       this.popup.dataset.url = this.popupSourceUrl;
@@ -120,10 +99,8 @@ export default class PopupTrigger extends ComponentBase {
     if (this.isClosePopupTrigger) return;
     if (!this.isActive) return;
 
-    this.popup = await this.createPopup();
+    await this.createPopup();
     this.addPopupToPage();
-    // the icon is initialize async by page loader
-    this.triggerIcon = this.querySelector('raqn-icon');
 
     // Reassign to just toggle after the popup is created;
     this.loadPopup = this.togglePopup;
@@ -131,29 +108,31 @@ export default class PopupTrigger extends ComponentBase {
   }
 
   async createPopup() {
-    await component.loadAndDefine('popup');
-    const popup = document.createElement('raqn-popup');
+    await loadAndDefine(componentList.popup);
 
-    popup.dataset.url = this.popupSourceUrl;
-    popup.dataset.active = true;
-    // Set the popupTrigger property of the popup component to this trigger instance
-    popup.popupTrigger = this;
-    return popup;
+    const popupEl = document.createElement('raqn-popup');
+    popupEl.dataset.url = this.popupSourceUrl;
+    popupEl.dataset.active = true;
+    // link popup with popup-trigger
+    popupEl.elements.popupTrigger = this;
+    if (this.popupConfigId) popupEl.setAttribute('config-id', this.popupConfigId);
+
+    this.elements.popup = popupEl;
   }
 
   togglePopup() {
-    this.popup.dataset.active = this.isActive;
-    this.popupBtn.setAttribute('aria-expanded', this.isActive);
-    if (this.triggerIcon) {
-      this.triggerIcon.dataset.active = this.isActive;
+    this.elements.popup.dataset.active = this.isActive;
+    this.elements.popupBtn.setAttribute('aria-expanded', this.isActive);
+    if (this.elements.triggerIcon) {
+      this.elements.triggerIcon.dataset.active = this.isActive;
     }
     if (!this.isActive) {
-      this.popupBtn.focus();
+      this.elements.popupBtn.focus();
     }
   }
 
   addPopupToPage() {
-    if (!this.popup) return;
-    document.body.append(this.popup);
+    if (!this.elements.popup) return;
+    document.body.append(this.elements.popup);
   }
 }
