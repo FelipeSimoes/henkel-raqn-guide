@@ -1,4 +1,5 @@
 import ComponentBase from '../../scripts/component-base.js';
+import { componentList } from '../../scripts/component-list/component-list.js';
 import { stringToJsVal } from '../../scripts/libs.js';
 
 export default class Grid extends ComponentBase {

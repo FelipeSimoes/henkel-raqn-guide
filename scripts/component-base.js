@@ -441,10 +441,15 @@ export default class ComponentBase extends HTMLElement {
       },
     );
   */
+
   fragmentVirtualDom() {
-    const element = document.createElement('div');
-    element.innerHTML = this.fragmentContent;
-    return generateVirtualDom(element.childNodes);
+    const placeholder = document.createElement('div');
+    placeholder.innerHTML = this.fragmentContent;
+    const virtualDom = generateVirtualDom(placeholder);
+    virtualDom.isRoot = true;
+    this.innerHTML = '';
+    return virtualDom;
+
   }
 
   async fragmentVirtualDomManipulation({ fragmentVirtualDom }) {
@@ -452,7 +457,7 @@ export default class ComponentBase extends HTMLElement {
   }
 
   renderFragment({ fragmentVirtualDom }) {
-    this.fragmentContent = renderVirtualDom(fragmentVirtualDom);
+    this.fragmentContent = fragmentVirtualDom.children.map(dom => renderVirtualDom(dom));
     return { stopTaskRun: !this.config.addFragmentContentOnInit };
   }
 
